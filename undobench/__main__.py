@@ -22,6 +22,32 @@ def show_history(store, session_id):
               f"| actor={step['actor']} | {step['recorded_at']} | manual_report")
 
 
+def show_resume(store, session_id):
+    summary = store.resume_summary(session_id)
+    print(DISCLAIMER)
+    print(f"Resume summary | session {session_id} | revision {summary['revision']}")
+    print("References below use session/step; request IDs identify the original reports.")
+    last = summary["last_step"]
+    if last is None:
+        print("Most recent confirmed report: none (empty session).")
+    else:
+        print(f"Most recent confirmed report: {session_id}/{last['sequence']} "
+              f"| request={last['request_id']} | {last['part_id']} -> {last['tray_cell']} "
+              f"| actor={last['actor']} | {last['recorded_at']}")
+    for part in summary["parts"]:
+        report = part["latest_report"]
+        if report is None:
+            print(f"{part['part_id']}: reported tray UNKNOWN (no confirmed report); "
+                  "current physical location UNKNOWN.")
+        else:
+            print(f"{part['part_id']}: last reported tray {report['tray_cell']} "
+                  f"[{session_id}/{report['sequence']}; request={report['request_id']}]; "
+                  "current physical location UNKNOWN.")
+    print("Unconfirmed: movement since each report, current tray occupancy, assembly state "
+          "and physical correctness. No visual evidence or reconciliation is available.")
+    print("No next assembly action is established by this summary.")
+
+
 def demo():
     print(f"Synthetic demonstration: {KIT_ID}; P01-P10; tray A1-D4.")
     print(DISCLAIMER)
@@ -47,6 +73,8 @@ def main(argv=None):
     commands.add_parser("new", help="create a persistent empty session; print its ID")
     history = commands.add_parser("history", help="show ordered manual reports")
     history.add_argument("session")
+    resume = commands.add_parser("resume", help="read-only summary of stored manual reports")
+    resume.add_argument("session")
     confirm = commands.add_parser("confirm", help="append one deliberate manual report")
     confirm.add_argument("session")
     confirm.add_argument("--part", required=True)
@@ -65,9 +93,11 @@ def main(argv=None):
         elif args.command == "demo":
             demo()
         else:
-            with Store(args.db) as store:
+            with Store(args.db, read_only=args.command == "resume") as store:
                 if args.command == "new":
                     print(store.create_session())
+                elif args.command == "resume":
+                    show_resume(store, args.session)
                 elif args.command == "history":
                     show_history(store, args.session)
                 else:

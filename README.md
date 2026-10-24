@@ -54,3 +54,15 @@ The brief proposes Python/SQLite with FastAPI, OpenCV and React for later work. 
 ## Private files and Git
 
 The existing project briefs, `local-notes/`, `data/private/`, database files, media, virtual environments, `.env` files and caches are ignored. Keep private files in those locations; ignore rules are not a secret scanner. Only code, tests, this README and ignore rules belong in today's local commits. No remote is required.
+
+## Read-only interruption summary
+
+```powershell
+python -m undobench resume $session
+```
+
+Use the existing persistent session ID (and the same `--db` file, if customized). The command opens the database read-only: it does not create missing files, append steps, change revision or mark a session resumed. It derives a fresh summary from one consistent history snapshot each time; no summary is stored or reset separately.
+
+The summary cites the most recent confirmed report and the latest report for every recorded part by `session-id/step-sequence` and request ID. A reported tray cell is known only as a historical human assertion. All current physical locations remain UNKNOWN, including for reported parts; unreported parts show no confirmed report. Movement during interruption, present occupancy and assembly correctness remain unconfirmed. Two parts reporting the same cell are retained without inventing occupancy rules. No assembly action is recommended.
+
+Automated tests also cover empty and separate sessions, repeated part reports, read-only access, missing databases and identical output after a new process reloads the database from a relocated code copy. This simulates restarting/reopening a repository; no laptop reboot or Git-history operation is required or claimed.

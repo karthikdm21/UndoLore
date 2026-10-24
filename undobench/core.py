@@ -23,8 +23,13 @@ def token(value, field):
 
 
 class Store:
-    def __init__(self, path):
+    def __init__(self, path, *, read_only=False):
         path = Path(path)
+        if read_only:
+            self.db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro",
+                                      uri=True, isolation_level=None, timeout=5)
+            self.db.row_factory = sqlite3.Row
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path, isolation_level=None, timeout=5)
         self.db.row_factory = sqlite3.Row
@@ -86,6 +91,21 @@ class Store:
         except Exception:
             self.db.execute("ROLLBACK")
             raise
+
+    def resume_summary(self, session_id):
+        """Summarize recorded reports, never infer current physical state."""
+        history = self.history(session_id)
+        latest = {step["part_id"]: step for step in history["steps"]}
+        return {
+            "session_id": session_id,
+            "revision": history["revision"],
+            "last_step": history["steps"][-1] if history["steps"] else None,
+            "parts": [
+                {"part_id": part, "latest_report": latest.get(part),
+                 "current_physical_location": "unknown"}
+                for part in PARTS
+            ],
+        }
 
     def confirm(self, session_id, *, part_id, tray_cell, actor,
                 request_id, expected_revision, confirmed):
