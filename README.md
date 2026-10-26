@@ -1,4 +1,6 @@
-# UndoBench
+# Undo Lore
+
+UndoBench is the local project and Python package behind this repository.
 
 A local Python/SQLite experiment for recording a person's part-and-tray reports and reviewing them after an interruption. All records are manually confirmed assertions. They do not establish visual or physical correctness.
 
