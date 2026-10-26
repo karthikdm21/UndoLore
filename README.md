@@ -1,4 +1,4 @@
-# Undo Lore
+# UndoLore
 
 UndoBench is the local project and Python package behind this repository.
 
