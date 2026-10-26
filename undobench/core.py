@@ -53,6 +53,16 @@ class Store:
                 PRIMARY KEY (session_id, sequence),
                 UNIQUE (session_id, request_id)
             );
+            CREATE TABLE IF NOT EXISTS corrections (
+                session_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                target_sequence INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                PRIMARY KEY (session_id, sequence),
+                UNIQUE (session_id, target_sequence),
+                FOREIGN KEY (session_id, sequence) REFERENCES steps(session_id, sequence),
+                FOREIGN KEY (session_id, target_sequence) REFERENCES steps(session_id, sequence)
+            );
         """)
 
     def __enter__(self):
@@ -86,6 +96,15 @@ class Store:
             session["steps"] = [dict(row) for row in self.db.execute(
                 "SELECT * FROM steps WHERE session_id = ? ORDER BY sequence", (session_id,)
             )]
+            # Legacy databases remain readable without a write/migration on resume.
+            if self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='corrections'").fetchone():
+                metadata = {row["sequence"]: dict(row) for row in self.db.execute(
+                    "SELECT sequence, target_sequence, reason FROM corrections WHERE session_id = ?",
+                    (session_id,),
+                )}
+                for step in session["steps"]:
+                    if step["sequence"] in metadata:
+                        step.update(metadata[step["sequence"]])
             self.db.execute("COMMIT")
             return session
         except Exception:
@@ -95,7 +114,14 @@ class Store:
     def resume_summary(self, session_id):
         """Summarize recorded reports, never infer current physical state."""
         history = self.history(session_id)
-        latest = {step["part_id"]: step for step in history["steps"]}
+        # Corrections replace a report in its original historical slot, not at 'now'.
+        effective = {}
+        roots = {}
+        for step in history["steps"]:
+            root = roots[step["target_sequence"]] if "target_sequence" in step else step["sequence"]
+            roots[step["sequence"]] = root
+            effective[root] = step
+        latest = {step["part_id"]: step for _, step in sorted(effective.items())}
         return {
             "session_id": session_id,
             "revision": history["revision"],
@@ -109,6 +135,25 @@ class Store:
 
     def confirm(self, session_id, *, part_id, tray_cell, actor,
                 request_id, expected_revision, confirmed):
+        return self._append(session_id, part_id=part_id, tray_cell=tray_cell, actor=actor,
+                            request_id=request_id, expected_revision=expected_revision,
+                            confirmed=confirmed)
+
+    def correct(self, session_id, *, target, reason, part_id, tray_cell, actor,
+                request_id, expected_revision, confirmed):
+        token(session_id, "session_id")
+        match = re.fullmatch(r"([A-Za-z0-9_-]{1,64})/([1-9][0-9]{0,8})", target) if isinstance(target, str) else None
+        if match is None or match[1] != session_id:
+            raise ValidationError("target must be this session's full session-id/step-number reference")
+        if (not isinstance(reason, str) or not reason.strip() or len(reason) > 300
+                or any(ord(char) < 32 or ord(char) == 127 for char in reason)):
+            raise ValidationError("reason must be 1-300 characters, nonblank, without control characters")
+        return self._append(session_id, part_id=part_id, tray_cell=tray_cell, actor=actor,
+                            request_id=request_id, expected_revision=expected_revision,
+                            confirmed=confirmed, correction=(int(match[2]), reason))
+
+    def _append(self, session_id, *, part_id, tray_cell, actor, request_id,
+                expected_revision, confirmed, correction=None):
         token(session_id, "session_id")
         token(request_id, "request_id")
         token(actor, "actor")
@@ -128,25 +173,52 @@ class Store:
                 (session_id, request_id),
             ).fetchone()
             if previous is not None:
+                metadata = self.db.execute(
+                    "SELECT target_sequence, reason FROM corrections WHERE session_id = ? AND sequence = ?",
+                    (session_id, previous["sequence"]),
+                ).fetchone()
+                if (tuple(metadata) if metadata else None) != correction:
+                    raise ValidationError("request_id already used with different command or correction")
                 if (previous["part_id"], previous["tray_cell"], previous["actor"],
                     previous["sequence"] - 1) != (part_id, tray_cell, actor, expected_revision):
                     raise ValidationError("request_id already used with different input")
                 result = dict(previous)
+                if correction:
+                    result.update(target_sequence=correction[0], reason=correction[1])
             else:
                 if session["revision"] != expected_revision:
                     raise ValidationError("stale revision; read history before confirming again")
+                if correction:
+                    target = self.db.execute(
+                        "SELECT * FROM steps WHERE session_id = ? AND sequence = ?",
+                        (session_id, correction[0]),
+                    ).fetchone()
+                    if target is None:
+                        raise ValidationError("target record does not exist in this session")
+                    if self.db.execute(
+                        "SELECT 1 FROM corrections WHERE session_id = ? AND target_sequence = ?",
+                        (session_id, correction[0]),
+                    ).fetchone():
+                        raise ValidationError("target already corrected; target its latest correction instead")
+                    if (target["part_id"], target["tray_cell"]) == (part_id, tray_cell):
+                        raise ValidationError("correction must change the reported part or tray cell")
                 sequence = expected_revision + 1
                 self.db.execute(
                     "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?, ?, 'manual_report')",
                     (session_id, sequence, request_id, part_id, tray_cell, actor,
                      datetime.now(timezone.utc).isoformat()),
                 )
+                if correction:
+                    self.db.execute("INSERT INTO corrections VALUES (?, ?, ?, ?)",
+                                    (session_id, sequence, correction[0], correction[1]))
                 self.db.execute("UPDATE sessions SET revision = ? WHERE id = ?",
                                 (sequence, session_id))
                 result = dict(self.db.execute(
                     "SELECT * FROM steps WHERE session_id = ? AND sequence = ?",
                     (session_id, sequence),
                 ).fetchone())
+                if correction:
+                    result.update(target_sequence=correction[0], reason=correction[1])
             self.db.execute("COMMIT")
             return result
         except Exception:

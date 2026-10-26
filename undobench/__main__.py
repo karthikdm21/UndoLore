@@ -11,6 +11,13 @@ from .core import CELLS, DISCLAIMER, KIT_ID, PARTS, Store, ValidationError
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data/private/sessions.sqlite3"
 
 
+def provenance(step):
+    if "target_sequence" not in step:
+        return ""
+    return (f" | correction of {step['session_id']}/{step['target_sequence']}"
+            f" | reason={step['reason']}")
+
+
 def show_history(store, session_id):
     history = store.history(session_id)
     print(DISCLAIMER)
@@ -19,7 +26,7 @@ def show_history(store, session_id):
         print("No recorded steps.")
     for step in history["steps"]:
         print(f"{step['sequence']}. place_in_tray {step['part_id']} -> {step['tray_cell']} "
-              f"| actor={step['actor']} | {step['recorded_at']} | manual_report")
+              f"| actor={step['actor']} | {step['recorded_at']} | manual_report" + provenance(step))
 
 
 def show_resume(store, session_id):
@@ -33,7 +40,7 @@ def show_resume(store, session_id):
     else:
         print(f"Most recent confirmed report: {session_id}/{last['sequence']} "
               f"| request={last['request_id']} | {last['part_id']} -> {last['tray_cell']} "
-              f"| actor={last['actor']} | {last['recorded_at']}")
+              f"| actor={last['actor']} | {last['recorded_at']}" + provenance(last))
     for part in summary["parts"]:
         report = part["latest_report"]
         if report is None:
@@ -42,9 +49,9 @@ def show_resume(store, session_id):
         else:
             print(f"{part['part_id']}: last reported tray {report['tray_cell']} "
                   f"[{session_id}/{report['sequence']}; request={report['request_id']}]; "
-                  "current physical location UNKNOWN.")
+                  "current physical location UNKNOWN." + provenance(report))
     print("Unconfirmed: movement since each report, current tray occupancy, assembly state "
-          "and physical correctness. No visual evidence or reconciliation is available.")
+          "and physical correctness. Manual corrections amend records only; physical reconciliation is unverified.")
     print("No next assembly action is established by this summary.")
 
 
@@ -75,14 +82,18 @@ def main(argv=None):
     history.add_argument("session")
     resume = commands.add_parser("resume", help="read-only summary of stored manual reports")
     resume.add_argument("session")
-    confirm = commands.add_parser("confirm", help="append one deliberate manual report")
-    confirm.add_argument("session")
-    confirm.add_argument("--part", required=True)
-    confirm.add_argument("--cell", required=True)
-    confirm.add_argument("--actor", required=True)
-    confirm.add_argument("--request", required=True)
-    confirm.add_argument("--revision", required=True, type=int)
-    confirm.add_argument("--confirm", action="store_true")
+    for name in ("confirm", "correct"):
+        command = commands.add_parser(name, help="append an explicit manual report or correction")
+        command.add_argument("session")
+        command.add_argument("--part", required=True)
+        command.add_argument("--cell", required=True)
+        command.add_argument("--actor", required=True)
+        command.add_argument("--request", required=True)
+        command.add_argument("--revision", required=True, type=int)
+        command.add_argument("--confirm", action="store_true")
+        if name == "correct":
+            command.add_argument("--target", required=True, help="full session-id/step-number")
+            command.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "inventory":
@@ -101,10 +112,12 @@ def main(argv=None):
                 elif args.command == "history":
                     show_history(store, args.session)
                 else:
-                    step = store.confirm(
+                    operation = store.correct if args.command == "correct" else store.confirm
+                    extra = {"target": args.target, "reason": args.reason} if args.command == "correct" else {}
+                    step = operation(
                         args.session, part_id=args.part, tray_cell=args.cell,
                         actor=args.actor, request_id=args.request,
-                        expected_revision=args.revision, confirmed=args.confirm,
+                        expected_revision=args.revision, confirmed=args.confirm, **extra,
                     )
                     print(f"Recorded/replayed step {step['sequence']}.")
                     show_history(store, args.session)
