@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "kit_id": "synthetic-block-kit-v1",
+  "parts": [
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06",
+    "P07",
+    "P08",
+    "P09",
+    "P10"
+  ],
+  "sources": [
+    {
+      "id": "synthetic-source",
+      "relative_path": "synthetic/not-a-real-video.mp4",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "segment": "synthetic-segment",
+      "duration_pts": 90000,
+      "timebase_num": 1,
+      "timebase_den": 90000
+    }
+  ],
+  "evidence": [
+    {
+      "id": "synthetic-label",
+      "source_id": "synthetic-source",
+      "start_pts": 3003,
+      "end_pts": 6006,
+      "part_id": "P01",
+      "tray_cell": "A1"
+    }
+  ],
+  "graphs": {
+    "disassembly": {
+      "version": "synthetic-v1",
+      "reviewed": true,
+      "reviewed_by": "synthetic-reviewer",
+      "nodes": [
+        {
+          "id": "synthetic-node",
+          "action": "Synthetic labeled action; no physical instruction",
+          "parts": [
+            "P01"
+          ],
+          "prerequisites": [],
+          "evidence_ids": [
+            "synthetic-label"
+          ]
+        }
+      ]
+    },
+    "reassembly": {
+      "version": "synthetic-v1",
+      "reviewed": true,
+      "reviewed_by": "synthetic-reviewer",
+      "nodes": [
+        {
+          "id": "synthetic-node",
+          "action": "Synthetic labeled action; no physical instruction",
+          "parts": [
+            "P01"
+          ],
+          "prerequisites": [],
+          "evidence_ids": [
+            "synthetic-label"
+          ]
+        }
+      ]
+    }
+  }
+}

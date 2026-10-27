@@ -1,11 +1,13 @@
 """Run with python -m undobench; only Python's standard library is needed."""
 
 import argparse
+import json
 from pathlib import Path
 import sqlite3
 import sys
 from tempfile import TemporaryDirectory
 
+from .contracts import load_manifest
 from .core import CELLS, DISCLAIMER, KIT_ID, PARTS, Store, ValidationError
 
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data/private/sessions.sqlite3"
@@ -82,6 +84,8 @@ def main(argv=None):
     history.add_argument("session")
     resume = commands.add_parser("resume", help="read-only summary of stored manual reports")
     resume.add_argument("session")
+    manifest = commands.add_parser("validate-manifest", help="validate evidence/graph metadata only")
+    manifest.add_argument("path", type=Path)
     for name in ("confirm", "correct"):
         command = commands.add_parser(name, help="append an explicit manual report or correction")
         command.add_argument("session")
@@ -96,7 +100,9 @@ def main(argv=None):
             command.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "inventory":
+        if args.command == "validate-manifest":
+            print(json.dumps(load_manifest(args.path), indent=2))
+        elif args.command == "inventory":
             print(KIT_ID)
             for part, label in PARTS.items():
                 print(f"{part}: {label}")
