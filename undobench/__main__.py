@@ -7,6 +7,7 @@ import sqlite3
 import sys
 from tempfile import TemporaryDirectory
 
+from .evidence import import_evidence, evidence_status
 from .contracts import load_manifest
 from .core import CELLS, DISCLAIMER, KIT_ID, PARTS, Store, ValidationError
 
@@ -86,6 +87,13 @@ def main(argv=None):
     resume.add_argument("session")
     manifest = commands.add_parser("validate-manifest", help="validate evidence/graph metadata only")
     manifest.add_argument("path", type=Path)
+    ingest = commands.add_parser("import-evidence", help="store validated metadata; no confirmation")
+    ingest.add_argument("session")
+    ingest.add_argument("manifest", type=Path)
+    ingest.add_argument("--media-root", type=Path, required=True)
+    status = commands.add_parser("evidence-status", help="reload metadata and recheck source bytes")
+    status.add_argument("session")
+    status.add_argument("bundle")
     for name in ("confirm", "correct"):
         command = commands.add_parser(name, help="append an explicit manual report or correction")
         command.add_argument("session")
@@ -110,8 +118,13 @@ def main(argv=None):
         elif args.command == "demo":
             demo()
         else:
-            with Store(args.db, read_only=args.command == "resume") as store:
-                if args.command == "new":
+            with Store(args.db, read_only=args.command in ("resume", "evidence-status")) as store:
+                if args.command == "import-evidence":
+                    print(json.dumps(import_evidence(store, args.session, args.manifest,
+                                                     args.media_root), indent=2))
+                elif args.command == "evidence-status":
+                    print(json.dumps(evidence_status(store, args.session, args.bundle), indent=2))
+                elif args.command == "new":
                     print(store.create_session())
                 elif args.command == "resume":
                     show_resume(store, args.session)

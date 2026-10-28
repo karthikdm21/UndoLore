@@ -128,7 +128,7 @@ def validate_manifest(data):
     }
 
 
-def load_manifest(path):
+def read_manifest(path):
     def unique_pairs(pairs):
         result = {}
         for key, value in pairs:
@@ -144,4 +144,9 @@ def load_manifest(path):
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
     except (UnicodeError, ValueError, RecursionError) as error:
         raise ValidationError("invalid manifest JSON: " + str(error)) from error
-    return validate_manifest(data)
+    validate_manifest(data)
+    return data
+
+
+def load_manifest(path):
+    return validate_manifest(read_manifest(path))
