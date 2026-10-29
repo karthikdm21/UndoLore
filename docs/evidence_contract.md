@@ -20,3 +20,19 @@ Imports add one `evidence_imports` table to the existing local SQLite database, 
 Source paths resolve inside the selected root, including resolved-link containment checks. Hashing reads files in 1 MiB chunks. Status is `missing`, `not_a_file`, `outside_media_root`, `unreadable`, `hash_mismatch` or `bytes_match`. Retrieval returns initial and freshly checked statuses; prior matches never replace current failures. A match proves only byte identity against the supplied hash at check time. It does not decode a video or establish its actual timebase, duration, usability, human review or physical correctness. Source metadata still says `declared_not_decoded`, and evidence remains `not_confirmed`. File changes after a check require another check.
 
 Real kit session configuration, actual media probing/playback, evidence-linked confirmations and graph planning remain separate work. Current session creation still uses the existing synthetic kit; manifests for a different kit are rejected rather than silently relabeled. Keep real manifests, media roots and databases under private local storage. No actual video or user data is committed.
+
+
+## Explicit manual label reviews
+
+After importing a bundle, `review-status` returns its separate review revision (initially zero):
+
+```powershell
+python -m undobench review-status SESSION BUNDLE
+python -m undobench review-evidence SESSION BUNDLE --evidence synthetic-label --decision unclear --actor sample-reviewer --reason "Synthetic ambiguity" --request review-1 --review-revision 0 --confirm
+```
+
+Replace session/bundle placeholders with IDs from an existing import. `--db` still goes before the command. Decisions are `accept_label`, `unclear` and `reject_label`. Every append requires actor, nonblank reason (at most 300 characters; no controls), a new request ID, current bundle review revision and deliberate `--confirm`. Accepting a label requires current source bytes to match the immutable manifest's declared hash. Unclear/reject can record uncertainty even if media is missing. The app does not play or decode the video; review means the person reports a decision about that reference, not that the app verified the scene or authenticated the reviewer.
+
+The new additive `evidence_reviews` SQLite table stores immutable ordered decisions with session, bundle, evidence ID, request ID, actor, reason, UTC time and source-byte status at review. The reference resolves back to original PTS/timebase, part and cell in the saved manifest. Identical retries return the original event even after media changes; they are historical replays. Conflicting retries and stale revisions reject without appending. Request IDs and review revisions are scoped to a session/bundle. A later decision appends instead of deleting earlier reviews. Session steps/revisions are unaffected, and imports retain `not_confirmed` status.
+
+`review-status` reads a consistent database snapshot without creating/migrating tables, preserves all review events and rechecks source files. Latest accepted labels show `needs_review` when the source is currently missing/mismatched/unreadable; no history is erased. Restored matching original bytes resolve to the same recorded assertion. These are historical label assertions only: physical state remains unknown, timebase remains declared/undecoded, and no session step confirmation, graph eligibility or visual evaluation is performed. Keep labels and reasons synthetic until actual reviewed kit/media is available. Confirm/correct/reconciliation integration and real timestamped playback remain outstanding.

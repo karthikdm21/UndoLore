@@ -7,6 +7,7 @@ import sqlite3
 import sys
 from tempfile import TemporaryDirectory
 
+from .reviews import DECISIONS, review_evidence, review_status
 from .evidence import import_evidence, evidence_status
 from .contracts import load_manifest
 from .core import CELLS, DISCLAIMER, KIT_ID, PARTS, Store, ValidationError
@@ -94,6 +95,19 @@ def main(argv=None):
     status = commands.add_parser("evidence-status", help="reload metadata and recheck source bytes")
     status.add_argument("session")
     status.add_argument("bundle")
+    reviews = commands.add_parser("review-status", help="read manual label reviews and current source status")
+    reviews.add_argument("session")
+    reviews.add_argument("bundle")
+    review = commands.add_parser("review-evidence", help="append a deliberate manual label assertion")
+    review.add_argument("session")
+    review.add_argument("bundle")
+    review.add_argument("--evidence", required=True)
+    review.add_argument("--decision", required=True, choices=DECISIONS)
+    review.add_argument("--actor", required=True)
+    review.add_argument("--reason", required=True)
+    review.add_argument("--request", required=True)
+    review.add_argument("--review-revision", required=True, type=int)
+    review.add_argument("--confirm", action="store_true")
     for name in ("confirm", "correct"):
         command = commands.add_parser(name, help="append an explicit manual report or correction")
         command.add_argument("session")
@@ -118,8 +132,18 @@ def main(argv=None):
         elif args.command == "demo":
             demo()
         else:
-            with Store(args.db, read_only=args.command in ("resume", "evidence-status")) as store:
-                if args.command == "import-evidence":
+            with Store(args.db, read_only=args.command in ("resume", "evidence-status", "review-status")) as store:
+                if args.command == "review-status":
+                    print(json.dumps(review_status(store, args.session, args.bundle), indent=2))
+                elif args.command == "review-evidence":
+                    record = review_evidence(
+                        store, args.session, args.bundle, evidence_id=args.evidence,
+                        decision=args.decision, actor=args.actor, reason=args.reason,
+                        request_id=args.request, expected_review_revision=args.review_revision,
+                        confirmed=args.confirm)
+                    print(json.dumps({"review": record, "assertion_type": "manual_label_only",
+                                      "physical_verification": "unknown"}, indent=2))
+                elif args.command == "import-evidence":
                     print(json.dumps(import_evidence(store, args.session, args.manifest,
                                                      args.media_root), indent=2))
                 elif args.command == "evidence-status":
