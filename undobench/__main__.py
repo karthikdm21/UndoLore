@@ -16,10 +16,16 @@ DEFAULT_DB = Path(__file__).resolve().parent.parent / "data/private/sessions.sql
 
 
 def provenance(step):
-    if "target_sequence" not in step:
-        return ""
-    return (f" | correction of {step['session_id']}/{step['target_sequence']}"
-            f" | reason={step['reason']}")
+    result = ""
+    if "target_sequence" in step:
+        result += (f" | correction of {step['session_id']}/{step['target_sequence']}"
+                   f" | reason={step['reason']}")
+    if "evidence_reference" in step:
+        ref = step["evidence_reference"]
+        result += (f" | historical manual review {ref['bundle_id']}/{ref['evidence_id']}"
+                   f" review={ref['review_sequence']} synthetic={ref['synthetic']}"
+                   " | current source support not assessed here; use review-status")
+    return result
 
 
 def show_history(store, session_id):
@@ -108,7 +114,7 @@ def main(argv=None):
     review.add_argument("--request", required=True)
     review.add_argument("--review-revision", required=True, type=int)
     review.add_argument("--confirm", action="store_true")
-    for name in ("confirm", "correct"):
+    for name in ("confirm", "correct", "confirm-reviewed"):
         command = commands.add_parser(name, help="append an explicit manual report or correction")
         command.add_argument("session")
         command.add_argument("--part", required=True)
@@ -117,6 +123,10 @@ def main(argv=None):
         command.add_argument("--request", required=True)
         command.add_argument("--revision", required=True, type=int)
         command.add_argument("--confirm", action="store_true")
+        if name == "confirm-reviewed":
+            command.add_argument("bundle")
+            command.add_argument("--evidence", required=True)
+            command.add_argument("--review-revision", required=True, type=int)
         if name == "correct":
             command.add_argument("--target", required=True, help="full session-id/step-number")
             command.add_argument("--reason", required=True)
@@ -157,6 +167,10 @@ def main(argv=None):
                 else:
                     operation = store.correct if args.command == "correct" else store.confirm
                     extra = {"target": args.target, "reason": args.reason} if args.command == "correct" else {}
+                    if args.command == "confirm-reviewed":
+                        operation = store.confirm_reviewed
+                        extra = {"bundle_id": args.bundle, "evidence_id": args.evidence,
+                                 "expected_review_revision": args.review_revision}
                     step = operation(
                         args.session, part_id=args.part, tray_cell=args.cell,
                         actor=args.actor, request_id=args.request,

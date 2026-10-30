@@ -105,6 +105,11 @@ class Store:
                 for step in session["steps"]:
                     if step["sequence"] in metadata:
                         step.update(metadata[step["sequence"]])
+            from .linked import link_for_step
+            for step in session["steps"]:
+                link = link_for_step(self, session_id, step["sequence"])
+                if link:
+                    step["evidence_reference"] = link
             self.db.execute("COMMIT")
             return session
         except Exception:
@@ -139,6 +144,17 @@ class Store:
                             request_id=request_id, expected_revision=expected_revision,
                             confirmed=confirmed)
 
+    def confirm_reviewed(self, session_id, *, bundle_id, evidence_id, expected_review_revision,
+                         part_id, tray_cell, actor, request_id, expected_revision, confirmed):
+        token(bundle_id, "bundle_id")
+        token(evidence_id, "evidence_id")
+        if type(expected_review_revision) is not int or expected_review_revision < 0:
+            raise ValidationError("expected_review_revision must be a non-negative integer")
+        return self._append(session_id, part_id=part_id, tray_cell=tray_cell, actor=actor,
+                            request_id=request_id, expected_revision=expected_revision,
+                            confirmed=confirmed,
+                            reviewed=(bundle_id, evidence_id, expected_review_revision))
+
     def correct(self, session_id, *, target, reason, part_id, tray_cell, actor,
                 request_id, expected_revision, confirmed):
         token(session_id, "session_id")
@@ -153,7 +169,7 @@ class Store:
                             confirmed=confirmed, correction=(int(match[2]), reason))
 
     def _append(self, session_id, *, part_id, tray_cell, actor, request_id,
-                expected_revision, confirmed, correction=None):
+                expected_revision, confirmed, correction=None, reviewed=None):
         token(session_id, "session_id")
         token(request_id, "request_id")
         token(actor, "actor")
@@ -165,6 +181,7 @@ class Store:
             raise ValidationError("expected_revision must be a non-negative integer")
         if confirmed is not True:
             raise ValidationError("explicit human confirmation is required (--confirm)")
+        from .linked import link_for_step, prepare_link, insert_link
         self.db.execute("BEGIN IMMEDIATE")
         try:
             session = self._session(session_id)
@@ -173,6 +190,10 @@ class Store:
                 (session_id, request_id),
             ).fetchone()
             if previous is not None:
+                link = link_for_step(self, session_id, previous["sequence"])
+                original_reference = (link["bundle_id"], link["evidence_id"], link["review_revision"]) if link else None
+                if original_reference != reviewed:
+                    raise ValidationError("request_id already used with different evidence reference or command")
                 metadata = self.db.execute(
                     "SELECT target_sequence, reason FROM corrections WHERE session_id = ? AND sequence = ?",
                     (session_id, previous["sequence"]),
@@ -185,9 +206,12 @@ class Store:
                 result = dict(previous)
                 if correction:
                     result.update(target_sequence=correction[0], reason=correction[1])
+                if link:
+                    result["evidence_reference"] = link
             else:
                 if session["revision"] != expected_revision:
                     raise ValidationError("stale revision; read history before confirming again")
+                link = prepare_link(self, session_id, reviewed, part_id, tray_cell) if reviewed else None
                 if correction:
                     target = self.db.execute(
                         "SELECT * FROM steps WHERE session_id = ? AND sequence = ?",
@@ -208,6 +232,8 @@ class Store:
                     (session_id, sequence, request_id, part_id, tray_cell, actor,
                      datetime.now(timezone.utc).isoformat()),
                 )
+                if link:
+                    insert_link(self, session_id, sequence, link)
                 if correction:
                     self.db.execute("INSERT INTO corrections VALUES (?, ?, ?, ?)",
                                     (session_id, sequence, correction[0], correction[1]))
@@ -219,6 +245,8 @@ class Store:
                 ).fetchone())
                 if correction:
                     result.update(target_sequence=correction[0], reason=correction[1])
+                if link:
+                    result["evidence_reference"] = link
             self.db.execute("COMMIT")
             return result
         except Exception:
